@@ -1,0 +1,8 @@
+openssl genpkey -algorithm RSA -out jwt_private.pem -pkeyopt rsa_keygen_bits:2048
+openssl rsa -in jwt_private.pem -pubout -out jwt_public.pem
+
+jwt_private.pem  → hanya untuk Auth Service
+jwt_public.pem   → untuk DMS Service
+
+
+{"accessToken":"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJtZXJjaGFudF9pZCI6Ik1SQy0yMDI2LTAwMSIsImlzcyI6InBvcnRhbC1tZXJjaGFudC1vbmJvYXJkaW5nIiwic3ViIjoibWVyY2hhbnQtdXNlci0xMjMiLCJhdWQiOlsiZG1zLXNlcnZpY2UiXSwiZXhwIjoxNzkzNTUzNTY2LCJpYXQiOjE3OTM1NDk5NjZ9.Cdr64wgZLKGsM5f7yqVSWhGKBgXLxNOMWceFzOW2vbBIrnRuhhnZHV6BGhgykgK5KBRj8cClcp0Xe7bPZd-kx3tnnpK6x5qTLPCEPc967pr59i66P-H71gppF66F9utg17MmSeCHmZQjirkVYJ5cMa8RN10LPmwSepJGZiNDh3hEUbxa9pBRSPBCmsu8F0n4jzqrKcXllpngNPp8OEUSzK8czlaPKG77o9KpsBjvz29cI61z8a_wkoGdeoKUDDKGvCsEcJMAYi9vdBpFTtT0DzKtUYJCIsH7R-Wh0q8CpnnyPcHveD4UoosBDkaZqTykU_nbvDsP7ZSzZY7Qm62d5w","expiresIn":"3600","tokenType":"Bearer"}
