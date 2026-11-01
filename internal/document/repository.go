@@ -22,27 +22,29 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 
 func (r *Repository) Create(ctx context.Context, doc *Document) error {
 	query := `
-		INSERT INTO dms.documents (
-			original_name,
-			mime_type,
-			size_bytes,
-			checksum_sha256,
-			storage_key,
-			current_version,
-			document_type,
-			entity_type,
-			entity_id,
-			status,
-			uploaded_by
-		)
-		VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
-		)
-		RETURNING
-			id,
-			created_at,
-			updated_at
-	`
+	INSERT INTO dms.documents (
+		original_name,
+		mime_type,
+		size_bytes,
+		checksum_sha256,
+		storage_key,
+		current_version,
+		document_type,
+		entity_type,
+		entity_id,
+		merchant_id,
+		registration_id,
+		status,
+		uploaded_by
+	)
+	VALUES (
+		$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+	)
+	RETURNING
+		id,
+		created_at,
+		updated_at
+`
 
 	var uploadedBy *string
 
@@ -62,6 +64,8 @@ func (r *Repository) Create(ctx context.Context, doc *Document) error {
 		doc.DocumentType,
 		doc.EntityType,
 		doc.EntityID,
+		doc.MerchantID,
+		doc.RegistrationID,
 		doc.Status,
 		uploadedBy,
 	).Scan(

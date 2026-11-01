@@ -43,6 +43,8 @@ func (s *Service) Upload(
 	documentType string,
 	entityType string,
 	entityID string,
+	merchantID string,
+	registrationID string,
 	uploadedBy string,
 ) (*Document, error) {
 	if fileHeader == nil || fileHeader.Size == 0 {
@@ -104,6 +106,8 @@ func (s *Service) Upload(
 		DocumentType:   documentType,
 		EntityType:     entityType,
 		EntityID:       entityID,
+		MerchantID:     merchantID,
+		RegistrationID: registrationID,
 		Status:         "ACTIVE",
 		UploadedBy:     uploadedBy,
 	}

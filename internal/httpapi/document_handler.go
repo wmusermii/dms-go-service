@@ -36,6 +36,8 @@ func (h *DocumentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	documentType := r.FormValue("documentType")
 	entityType := r.FormValue("entityType")
 	entityID := r.FormValue("entityId")
+	merchantID := r.FormValue("merchantId")
+	registrationID := r.FormValue("registrationId")
 	uploadedBy := r.FormValue("uploadedBy")
 
 	doc, err := h.service.Upload(
@@ -44,6 +46,8 @@ func (h *DocumentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		documentType,
 		entityType,
 		entityID,
+		merchantID,
+		registrationID,
 		uploadedBy,
 	)
 
@@ -63,14 +67,7 @@ func (h *DocumentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		log.Printf(
-			"upload document failed: %v | file=%s size=%d mime=%s",
-			err,
-			fileHeader.Filename,
-			fileHeader.Size,
-			fileHeader.Header.Get("Content-Type"),
-		)
-
+		log.Printf("upload document failed: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to upload document")
 		return
 	}
@@ -129,6 +126,7 @@ func (h *DocumentHandler) Download(w http.ResponseWriter, r *http.Request) {
 
 	doc, err := h.service.GetByID(r.Context(), id)
 	if err != nil {
+		log.Printf("download document failed: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to download document")
 		return
 	}
@@ -138,6 +136,45 @@ func (h *DocumentHandler) Download(w http.ResponseWriter, r *http.Request) {
 		"Content-Disposition",
 		`attachment; filename="`+doc.OriginalName+`"`,
 	)
+
+	http.ServeFile(w, r, filePath)
+}
+
+func (h *DocumentHandler) Preview(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	doc, err := h.service.GetByID(r.Context(), id)
+
+	if errors.Is(err, document.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "document not found")
+		return
+	}
+
+	if err != nil {
+		log.Printf("preview document failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to preview document")
+		return
+	}
+
+	filePath, err := h.service.GetFilePath(r.Context(), id)
+
+	if errors.Is(err, document.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "document not found")
+		return
+	}
+
+	if err != nil {
+		log.Printf("preview document failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to preview document")
+		return
+	}
+
+	w.Header().Set("Content-Type", doc.MimeType)
+	w.Header().Set(
+		"Content-Disposition",
+		`inline; filename="`+doc.OriginalName+`"`,
+	)
+	w.Header().Set("Cache-Control", "private, max-age=300")
 
 	http.ServeFile(w, r, filePath)
 }
@@ -188,42 +225,4 @@ func parseIntQuery(r *http.Request, key string, fallback int) int {
 	}
 
 	return parsed
-}
-func (h *DocumentHandler) Preview(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-
-	doc, err := h.service.GetByID(r.Context(), id)
-
-	if errors.Is(err, document.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "document not found")
-		return
-	}
-
-	if err != nil {
-		log.Printf("preview document failed: %v", err)
-		writeError(w, http.StatusInternalServerError, "failed to preview document")
-		return
-	}
-
-	filePath, err := h.service.GetFilePath(r.Context(), id)
-
-	if errors.Is(err, document.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "document not found")
-		return
-	}
-
-	if err != nil {
-		log.Printf("preview document failed: %v", err)
-		writeError(w, http.StatusInternalServerError, "failed to preview document")
-		return
-	}
-
-	w.Header().Set("Content-Type", doc.MimeType)
-	w.Header().Set(
-		"Content-Disposition",
-		`inline; filename="`+doc.OriginalName+`"`,
-	)
-	w.Header().Set("Cache-Control", "private, max-age=300")
-
-	http.ServeFile(w, r, filePath)
 }

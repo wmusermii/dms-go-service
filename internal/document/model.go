@@ -13,6 +13,8 @@ type Document struct {
 	DocumentType   string    `json:"documentType,omitempty"`
 	EntityType     string    `json:"entityType,omitempty"`
 	EntityID       string    `json:"entityId,omitempty"`
+	MerchantID     string    `json:"merchantId"`
+	RegistrationID string    `json:"registrationId,omitempty"`
 	Status         string    `json:"status"`
 	UploadedBy     string    `json:"uploadedBy,omitempty"`
 	CreatedAt      time.Time `json:"createdAt"`

@@ -10,7 +10,9 @@ import (
 )
 
 type MerchantClaims struct {
-	MerchantID string `json:"merchant_id"`
+	MerchantID     string `json:"merchant_id"`
+	RegistrationID string `json:"registration_id"`
+	Role           string `json:"role"`
 	jwt.RegisteredClaims
 }
 

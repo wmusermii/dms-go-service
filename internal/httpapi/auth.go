@@ -14,8 +14,10 @@ import (
 type contextKey string
 
 const (
-	ContextKeyUserID     contextKey = "userID"
-	ContextKeyMerchantID contextKey = "merchantID"
+	ContextKeyUserID         contextKey = "userID"
+	ContextKeyMerchantID     contextKey = "merchantID"
+	ContextKeyRegistrationID contextKey = "registrationID"
+	ContextKeyRole           contextKey = "role"
 )
 
 type AuthConfig struct {
@@ -33,7 +35,9 @@ type AuthMiddleware struct {
 }
 
 type MerchantClaims struct {
-	MerchantID string `json:"merchant_id"`
+	MerchantID     string `json:"merchant_id"`
+	RegistrationID string `json:"registration_id"`
+	Role           string `json:"role"`
 	jwt.RegisteredClaims
 }
 
@@ -108,13 +112,35 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		if claims.MerchantID == "" {
+		if claims.Role == "MERCHANT" && claims.MerchantID == "" {
 			writeError(w, http.StatusUnauthorized, "merchant_id is required")
+			return
+		}
+
+		if claims.Role == "MERCHANT_REGISTRATION" && claims.RegistrationID == "" {
+			writeError(w, http.StatusUnauthorized, "registration_id is required")
+			return
+		}
+
+		if err != nil || !token.Valid {
+			writeError(w, http.StatusUnauthorized, "invalid or expired token")
+			return
+		}
+
+		allowedRoles := map[string]bool{
+			"MERCHANT":              true,
+			"MERCHANT_REGISTRATION": true,
+		}
+
+		if !allowedRoles[claims.Role] {
+			writeError(w, http.StatusForbidden, "insufficient role")
 			return
 		}
 
 		ctx := context.WithValue(r.Context(), ContextKeyUserID, claims.Subject)
 		ctx = context.WithValue(ctx, ContextKeyMerchantID, claims.MerchantID)
+		ctx = context.WithValue(ctx, ContextKeyRegistrationID, claims.RegistrationID)
+		ctx = context.WithValue(ctx, ContextKeyRole, claims.Role)
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

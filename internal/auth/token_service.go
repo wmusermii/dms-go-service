@@ -9,7 +9,9 @@ import (
 )
 
 type MerchantClaims struct {
-	MerchantID string `json:"merchant_id"`
+	MerchantID     string `json:"merchant_id"`
+	RegistrationID string `json:"registration_id"`
+	Role           string `json:"role"`
 	jwt.RegisteredClaims
 }
 
@@ -44,15 +46,19 @@ func NewTokenService(
 	}, nil
 }
 
-func (s *TokenService) IssueMerchantToken(
+func (s *TokenService) IssueToken(
 	userID string,
 	merchantID string,
+	registrationID string,
+	role string,
 ) (string, time.Time, error) {
 	now := time.Now()
 	expiresAt := now.Add(s.expiry)
 
 	claims := MerchantClaims{
-		MerchantID: merchantID,
+		MerchantID:     merchantID,
+		RegistrationID: registrationID,
+		Role:           role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			Issuer:    s.issuer,
