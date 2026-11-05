@@ -1,0 +1,70 @@
+# =====================
+# Environment & secrets
+# =====================
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+*.crt
+*.csr
+
+# RSA / JWT keys
+jwt_private.pem
+jwt_public.pem
+keys/*.pem
+keys/*.key
+
+# =====================
+# Go
+# =====================
+# Binary hasil build
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output from go coverage
+*.out
+coverage.txt
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace
+go.work
+go.work.sum
+
+# =====================
+# DMS storage
+# =====================
+storage/
+!storage/.gitkeep
+
+# =====================
+# IDE / editor
+# =====================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# =====================
+# OS
+# =====================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =====================
+# Logs
+# =====================
+*.log
+logs/
