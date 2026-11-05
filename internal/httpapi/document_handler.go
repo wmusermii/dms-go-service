@@ -226,3 +226,79 @@ func parseIntQuery(r *http.Request, key string, fallback int) int {
 
 	return parsed
 }
+
+type BulkUploadResponse struct {
+	Documents []*document.Document `json:"documents"`
+	Errors    []BulkUploadError    `json:"errors"`
+}
+
+type BulkUploadError struct {
+	FileName string `json:"fileName"`
+	Error    string `json:"error"`
+}
+
+func (h *DocumentHandler) UploadBulk(w http.ResponseWriter, r *http.Request) {
+	const maxMemory = 10 << 20 // 10 MB
+
+	if err := r.ParseMultipartForm(maxMemory); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid multipart form")
+		return
+	}
+
+	files := r.MultipartForm.File["files"]
+
+	if len(files) == 0 {
+		writeError(w, http.StatusBadRequest, "files are required")
+		return
+	}
+
+	documentType := r.FormValue("documentType")
+	entityType := r.FormValue("entityType")
+	entityID := r.FormValue("entityId")
+	merchantID := r.FormValue("merchantId")
+	registrationID := r.FormValue("registrationId")
+	uploadedBy := r.FormValue("uploadedBy")
+
+	response := BulkUploadResponse{
+		Documents: make([]*document.Document, 0, len(files)),
+		Errors:    make([]BulkUploadError, 0),
+	}
+
+	for _, fileHeader := range files {
+		doc, err := h.service.Upload(
+			r.Context(),
+			fileHeader,
+			documentType,
+			entityType,
+			entityID,
+			merchantID,
+			registrationID,
+			uploadedBy,
+		)
+
+		if err != nil {
+			log.Printf(
+				"bulk upload failed: %v | file=%s",
+				err,
+				fileHeader.Filename,
+			)
+
+			response.Errors = append(response.Errors, BulkUploadError{
+				FileName: fileHeader.Filename,
+				Error:    "failed to upload document",
+			})
+
+			continue
+		}
+
+		response.Documents = append(response.Documents, doc)
+	}
+
+	status := http.StatusCreated
+
+	if len(response.Documents) == 0 {
+		status = http.StatusUnprocessableEntity
+	}
+
+	writeJSON(w, status, response)
+}

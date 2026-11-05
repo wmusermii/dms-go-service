@@ -82,13 +82,9 @@ func main() {
 		_, _ = w.Write([]byte(`{"status":"ok","database":"connected"}`))
 	})
 
-	mux.Handle(
-		"POST /v1/auth/token",
-		apiKeyMiddleware.Middleware(http.HandlerFunc(authHandler.IssueToken)),
-	)
-
+	mux.Handle("POST /v1/auth/token", apiKeyMiddleware.Middleware(http.HandlerFunc(authHandler.IssueToken)))
 	protected := http.NewServeMux()
-
+	protected.HandleFunc("POST /v1/documents/bulk", documentHandler.UploadBulk)
 	protected.HandleFunc("POST /v1/documents", documentHandler.Upload)
 	protected.HandleFunc("GET /v1/documents", documentHandler.List)
 	protected.HandleFunc("GET /v1/documents/{id}", documentHandler.GetByID)
