@@ -1,411 +1,145 @@
-# DMS Service
+# DMS — Document Management Service
 
-DMS (Document Management Service) adalah service Go untuk menyimpan, mengelola, dan menyajikan dokumen elektronik seperti KTP, NPWP, invoice, kontrak, dan dokumen pendukung registrasi merchant.
+DMS generik yang bisa dipakai banyak aplikasi lewat REST API. Setiap aplikasi didaftarkan sebagai **API client** (tenant) dengan API key sendiri; dokumen satu client tidak pernah terlihat oleh client lain.
 
-Service ini menyimpan metadata dokumen di PostgreSQL (`schema: dms`) dan file fisik di folder storage lokal yang dikonfigurasi melalui environment variable.
+Stack: Go 1.23 · chi · PostgreSQL (pgx) · storage local / S3-MinIO · scanner berbasis interface.
 
-## Fitur
+## Alur upload
 
-- Upload satu file
-- Upload banyak file (`bulk upload`)
-- Setiap file menghasilkan `documentId` tersendiri
-- Metadata dokumen di PostgreSQL
-- File fisik disimpan di folder storage
-- Preview file (`inline`)
-- Download file (`attachment`)
-- Soft delete dokumen
-- API Key untuk endpoint penerbitan token
-- JWT RS256 untuk akses dokumen
-- Dukungan merchant aktif dan calon merchant registrasi
-
-## Arsitektur
-
-```text
-Vue / Portal Backend
-        │
-        │ Authorization: Bearer <accessToken>
-        ▼
-DMS Service
-        │
-        ├── PostgreSQL: metadata dokumen
-        └── Storage folder: file fisik
+```
+Aplikasi ──POST /api/v1/documents──▶ 1. autentikasi (X-Client-Id + X-Api-Key)
+                                      2. validasi: ukuran · ekstensi · MIME dari isi file · checksum
+                                      3. quarantine: simpan di private storage, status PENDING
+                                      4. scan worker → Scanner (interface)
+                                      5. CLEAN → AVAILABLE (boleh preview/download)
+                                         INFECTED / ERROR → tidak pernah bisa diunduh
 ```
 
-Untuk calon merchant, Portal membuat `registrationId` terlebih dahulu. Setelah registrasi disetujui, Portal membuat `merchantId` dan mengaitkan dokumen ke merchant tersebut.
+- File **tidak pernah** dibuffer penuh di memori: stream langsung ke storage sambil menghitung SHA-256 dan ukuran.
+- `Content-Type` dari klien **diabaikan**; MIME ditentukan dari isi file (`http.DetectContentType`) lalu dicocokkan dengan ekstensi.
+- Storage bersifat private. Tidak ada presigned URL; semua download lewat DMS sehingga status scan selalu ditegakkan.
 
-## Prasyarat
+## Struktur folder (untuk trace kode)
 
-- Go 1.22 atau lebih baru
-- PostgreSQL 13 atau lebih baru
-- OpenSSL atau generator key bawaan project
-- Insomnia / Postman untuk testing API
+Satu request mengalir: **routes → middleware → handlers → services → repository / connector**.
 
-## Instalasi
+```
+cmd/api/main.go            wiring: config → db → connector → repository → service → handler → server + worker
+internal/
+  routes/                  daftar URL → handler + middleware (mulai trace dari sini)
+  middleware/              request-id, logger, recover, ClientAuth (API key), AdminAuth (bearer)
+  handlers/                HTTP saja: parse request, panggil service, bentuk response
+    document.go            upload (multipart streaming), list, get, update, delete, download, preview, versions
+    admin.go               client & API key
+    health.go              /healthz, /readyz
+  services/                aturan bisnis (tanpa HTTP, tanpa SQL)
+    document.go            pipeline validasi → storage → DB, gating download berdasar scan status
+    auth.go  client.go  audit.go
+  repository/
+    repository.go          interface persistence (kontrak)
+    postgres/              implementasi pgx; state.go = satu-satunya tempat status dokumen diturunkan
+  connector/
+    storage/               interface Storage + local.go + s3.go (MinIO/AWS) + factory.go
+    scanner/               interface Scanner + noop.go (dev) + factory.go
+  worker/scan.go           polling antrean PENDING → scan → simpan hasil
+  validation/              aturan file (ekstensi↔MIME), sanitasi nama, reader batas ukuran & hash
+  domain/                  model, konstanta status, error bertipe, UUID
+  httpx/                   envelope JSON, pemetaan error → status HTTP
+  config/  database/       env loader · pool pgx + migrator
+migrations/                000001_init.up.sql / .down.sql (di-embed ke binary)
+api/insomnia/              dms.insomnia.json (import ke Insomnia)
+```
 
-### 1. Clone project
+## Menjalankan
 
 ```bash
-git clone <repository-url>
-cd dms-go-service
+cp .env.example .env          # sesuaikan DATABASE_URL dan ADMIN_TOKEN
+go mod tidy                   # mengunduh dependensi & membuat go.sum
+make run                      # migrasi otomatis (MIGRATE_ON_START=true)
 ```
 
-### 2. Install dependency
+Butuh PostgreSQL 13+ (memakai `gen_random_uuid()` bawaan).
+
+### Onboarding aplikasi baru
 
 ```bash
-go mod tidy
+# 1. daftarkan aplikasi
+curl -X POST localhost:8080/admin/v1/clients \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"client_id":"app-sales","name":"Sales App"}'
+
+# 2. terbitkan API key (plaintext hanya tampil SEKALI; DB hanya menyimpan hash)
+curl -X POST localhost:8080/admin/v1/clients/<id-dari-langkah-1>/keys \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# 3. upload (field teks WAJIB sebelum field "file")
+curl -X POST localhost:8080/api/v1/documents \
+  -H 'X-Client-Id: app-sales' -H 'X-Api-Key: dms_xxx' -H 'X-Actor-Id: user-123' \
+  -F external_ref=order-1001 -F 'metadata={"module":"sales"}' -F file=@invoice.pdf
 ```
 
-### 3. Buat RSA key pair
+`X-Actor-Id` opsional: ID end-user di aplikasi pemanggil, dicatat di audit log.
 
-```bash
-go run ./cmd/keygen
-```
+## Endpoint
 
-Hasilnya:
+| Method | Path | Keterangan |
+|---|---|---|
+| POST | `/api/v1/documents` | Upload (multipart). 201, status `PENDING` |
+| GET | `/api/v1/documents` | List. Filter: `status`, `external_ref`, `limit` (maks 100), `offset` |
+| GET | `/api/v1/documents/{id}` | Metadata |
+| PATCH | `/api/v1/documents/{id}` | Ubah `external_ref` / `metadata` |
+| DELETE | `/api/v1/documents/{id}` | Soft delete |
+| GET | `/api/v1/documents/{id}/download` | Unduh versi CLEAN terbaru; `?version=n` untuk versi tertentu |
+| GET | `/api/v1/documents/{id}/preview` | Inline (PDF, gambar, teks); tipe lain 415 |
+| GET / POST | `/api/v1/documents/{id}/versions` | Daftar versi / upload versi baru |
+| POST / GET | `/admin/v1/clients` | Buat / daftar client |
+| POST / GET | `/admin/v1/clients/{id}/keys` | Terbitkan / daftar key |
+| POST | `/admin/v1/clients/{id}/keys/{keyId}/revoke` | Cabut key |
+| GET | `/healthz` `/readyz` | Probe |
 
-```text
-jwt_private.pem
-jwt_public.pem
-```
+Response sukses: `{"data": ...}` (+ `"meta"` untuk list). Error: `{"error":{"code","message","request_id"}}`.
+Download ketika belum CLEAN → **409 `document_not_available`**.
 
-Pindahkan public key ke folder `keys`:
+## Status
 
-```bash
-mkdir -p keys
-mv jwt_public.pem keys/jwt_public.pem
-```
-
-Pastikan struktur folder:
-
-```text
-dms-go-service/
-├── keys/
-│   └── jwt_public.pem
-├── jwt_private.pem
-├── cmd/
-│   ├── api/
-│   ├── keygen/
-│   ├── token/
-│   └── verifytoken/
-└── internal/
-```
-
-> `jwt_private.pem` hanya dipakai untuk menerbitkan token.
-> `keys/jwt_public.pem` dipakai DMS untuk memvalidasi token.
-
-### 4. Buat database
-
-Buat database PostgreSQL, misalnya:
-
-```sql
-CREATE DATABASE dms_service;
-```
-
-### 5. Jalankan migration
-
-Jalankan file migration berikut pada database tersebut:
-
-```bash
-psql -U postgres -d dms_service -f migrations/001_create_dms.sql
-```
-
-Atau import melalui DBeaver, pgAdmin, TablePlus, atau tool PostgreSQL lain.
-
-Migration akan membuat:
-
-- Schema `dms`
-- Tabel `dms.documents`
-- Tabel `dms.document_versions`
-- Tabel `dms.document_audit_logs`
-- Index pendukung
-- Data seed contoh
-
-## Konfigurasi
-
-Buat file `.env` di root project:
-
-```env
-APP_PORT=8101
-
-DATABASE_URL=postgres://postgres:your_password@localhost:5432/dms_service?sslmode=disable
-
-DMS_STORAGE_ROOT=./storage/dms
-
-DMS_API_KEY=dms_dev_7f3b9c2e8a1d4f60b5c8e7a2d9f143b6
-
-JWT_PRIVATE_KEY_PATH=./keys/jwt_private.pem
-JWT_PUBLIC_KEY_PATH=./keys/jwt_public.pem
-JWT_ISSUER=dms-service
-JWT_AUDIENCE=dms-service
-JWT_EXPIRY=1h
-```
-
-Sesuaikan:
-
-| Variable | Keterangan |
+| | Nilai |
 |---|---|
-| `APP_PORT` | Port DMS service |
-| `DATABASE_URL` | Koneksi PostgreSQL |
-| `DMS_STORAGE_ROOT` | Folder penyimpanan file fisik |
-| `DMS_API_KEY` | API key untuk endpoint get token |
-| `JWT_PRIVATE_KEY_PATH` | Private key untuk menerbitkan JWT |
-| `JWT_PUBLIC_KEY_PATH` | Public key untuk memvalidasi JWT |
-| `JWT_ISSUER` | Issuer JWT |
-| `JWT_AUDIENCE` | Audience JWT |
-| `JWT_EXPIRY` | Masa berlaku access token |
+| `scan_status` (per versi) | `PENDING` → `SCANNING` → `CLEAN` / `INFECTED` / `ERROR` |
+| `status` (dokumen) | `PENDING` belum ada versi CLEAN · `AVAILABLE` ada ≥1 versi CLEAN · `REJECTED` semua versi INFECTED/ERROR · `DELETED` |
 
-## Menjalankan Service
+Saat versi baru masih discan, versi CLEAN sebelumnya tetap bisa diunduh.
 
-```bash
-go run ./cmd/api
+## Menambah connector
+
+**Storage** — implementasikan `storage.Storage` (`Put/Get/Delete/Name`), daftarkan di `connector/storage/factory.go`, pilih lewat `STORAGE_DRIVER`.
+
+**Scanner** — implementasikan `scanner.Scanner`:
+
+```go
+Scan(ctx context.Context, r io.Reader) (scanner.Result, error)
 ```
 
-Service akan berjalan di:
+`error` = scan gagal (worker retry sampai `SCAN_MAX_ATTEMPTS`, lalu `ERROR`); ancaman terdeteksi = `Result{Clean:false, Signature:"..."}` **bukan** error. Daftarkan di `connector/scanner/factory.go`.
 
-```text
-http://localhost:8101
-```
+> `SCANNER_DRIVER=disabled` (default): file tetap `PENDING` dan tidak bisa diunduh. `noop` hanya untuk development — menandai semua file CLEAN tanpa memeriksa.
 
-Cek health:
+## Perbedaan dari ERD proyek
 
-```bash
-curl http://localhost:8101/health
-```
+Semua tabel dan kolom ERD dipertahankan. Tambahan (ditandai `(+)` di migrasi):
 
-Response:
+- `documents`: `external_ref`, `current_version`, `created_at`, `updated_at`, `deleted_at`
+- `document_versions`: `original_name`, `mime_type`, `size_bytes`, `checksum_sha256`, `scan_signature`, `scan_attempts`, `scanned_at`, `created_at`, `updated_at` — tiap versi punya info file sendiri
+- `api_client_keys`: `key_prefix`, `created_at`
+- `api_clients`, `document_audit_logs`: `created_at` (`updated_at` pada `api_clients`)
 
-```json
-{
-  "status": "ok"
-}
-```
+Nilai status yang dipakai: dokumen `PENDING|AVAILABLE|REJECTED|DELETED`; scan `PENDING|SCANNING|CLEAN|INFECTED|ERROR`; client `ACTIVE|SUSPENDED`; key `ACTIVE|REVOKED`.
 
-Cek koneksi database:
+## Catatan & batasan
 
-```bash
-curl http://localhost:8101/health/db
-```
-
-Response:
-
-```json
-{
-  "status": "ok",
-  "database": "connected"
-}
-```
-
-## Mendapatkan Access Token
-
-### Calon merchant registrasi
-
-```http
-POST http://localhost:8101/v1/auth/token
-X-API-Key: dms_dev_7f3b9c2e8a1d4f60b5c8e7a2d9f143b6
-Content-Type: application/json
-```
-
-```json
-{
-  "userId": "registration-user-123",
-  "registrationId": "REG-2026-001",
-  "role": "MERCHANT_REGISTRATION"
-}
-```
-
-Response:
-
-```json
-{
-  "accessToken": "eyJhbGciOiJSUzI1NiIs...",
-  "tokenType": "Bearer",
-  "expiresAt": "2026-11-05T12:00:00Z"
-}
-```
-
-### Merchant aktif
-
-```json
-{
-  "userId": "merchant-user-123",
-  "merchantId": "MRC-2026-001",
-  "role": "MERCHANT"
-}
-```
-
-## Upload Satu File
-
-```http
-POST http://localhost:8101/v1/documents
-Authorization: Bearer <accessToken>
-Content-Type: multipart/form-data
-```
-
-Form-data:
-
-| Field | Contoh |
-|---|---|
-| `file` | `ktp.jpg` |
-| `documentType` | `KTP` |
-| `entityType` | `MERCHANT_REGISTRATION` |
-| `entityId` | `REG-2026-001` |
-| `merchantId` | `MRC-2026-001` |
-| `registrationId` | `REG-2026-001` |
-| `uploadedBy` | `merchant-user-123` |
-
-Response:
-
-```json
-{
-  "id": "ad81f874-aecd-4b3d-a3fe-18dc5403e69d",
-  "originalName": "ktp.jpg",
-  "mimeType": "image/jpeg",
-  "sizeBytes": 29433,
-  "currentVersion": 1,
-  "documentType": "KTP",
-  "entityType": "MERCHANT_REGISTRATION",
-  "entityId": "REG-2026-001",
-  "merchantId": "MRC-2026-001",
-  "registrationId": "REG-2026-001",
-  "status": "ACTIVE"
-}
-```
-
-## Upload Banyak File
-
-```http
-POST http://localhost:8101/v1/documents/bulk
-Authorization: Bearer <accessToken>
-Content-Type: multipart/form-data
-```
-
-Gunakan field `files` berulang:
-
-| Field | Nilai |
-|---|---|
-| `files` | `ktp.jpg` |
-| `files` | `npwp.pdf` |
-| `files` | `pendukung.pdf` |
-| `documentType` | `MERCHANT_REGISTRATION_DOCUMENT` |
-| `entityType` | `MERCHANT_REGISTRATION` |
-| `entityId` | `REG-2026-001` |
-| `merchantId` | `MRC-2026-001` |
-| `registrationId` | `REG-2026-001` |
-| `uploadedBy` | `merchant-user-123` |
-
-Response:
-
-```json
-{
-  "documents": [
-    {
-      "id": "11111111-1111-4111-8111-111111111111",
-      "originalName": "ktp.jpg",
-      "status": "ACTIVE"
-    },
-    {
-      "id": "22222222-2222-4222-8222-222222222222",
-      "originalName": "npwp.pdf",
-      "status": "ACTIVE"
-    }
-  ],
-  "errors": []
-}
-```
-
-Setiap file memiliki `id` tersendiri.
-
-## Preview Dokumen
-
-```http
-GET http://localhost:8101/v1/documents/{documentId}/preview
-Authorization: Bearer <accessToken>
-```
-
-Contoh:
-
-```text
-GET http://localhost:8101/v1/documents/11111111-1111-4111-8111-111111111111/preview
-Authorization: Bearer <accessToken>
-```
-
-Endpoint ini menggunakan `Content-Disposition: inline`, sehingga image/PDF dapat ditampilkan langsung oleh browser.
-
-## Download Dokumen
-
-```http
-GET http://localhost:8101/v1/documents/{documentId}/download
-Authorization: Bearer <accessToken>
-```
-
-Endpoint ini menggunakan `Content-Disposition: attachment`, sehingga file akan diunduh.
-
-## Daftar Dokumen
-
-```http
-GET http://localhost:8101/v1/documents?limit=20&offset=0
-Authorization: Bearer <accessToken>
-```
-
-## Hapus Dokumen
-
-```http
-DELETE http://localhost:8101/v1/documents/{documentId}
-Authorization: Bearer <accessToken>
-```
-
-Endpoint ini melakukan soft delete:
-
-- `status` menjadi `DELETED`
-- `deleted_at` diisi
-- File fisik tidak langsung dihapus
-
-## Struktur Project
-
-```text
-dms-go-service/
-├── cmd/
-│   ├── api/
-│   ├── keygen/
-│   ├── token/
-│   └── verifytoken/
-├── internal/
-│   ├── auth/
-│   ├── config/
-│   ├── database/
-│   ├── document/
-│   └── httpapi/
-├── keys/
-│   └── jwt_public.pem
-├── migrations/
-│   └── 001_create_dms.sql
-├── storage/
-│   └── dms/
-├── .env
-├── go.mod
-└── README.md
-```
-
-## Keamanan
-
-- Gunakan HTTPS pada production.
-- Jangan expose `X-API-Key` ke browser/frontend.
-- Jangan commit `.env`, `jwt_private.pem`, atau file fisik dokumen ke repository.
-- Simpan `jwt_private.pem` hanya pada service yang menerbitkan token.
-- Simpan `jwt_public.pem` pada DMS untuk validasi token.
-- Folder `DMS_STORAGE_ROOT` harus private dan tidak boleh dijadikan static file public.
-- Validasi tipe file berdasarkan isi file, bukan hanya `Content-Type`.
-- Terapkan authorization berdasarkan `merchantId` atau `registrationId` sebelum preview/download.
-
-## Testing dengan Insomnia
-
-1. Set environment variable `access_token`.
-2. Jalankan `POST /v1/auth/token`.
-3. Tambahkan After-response script untuk menyimpan `accessToken`.
-4. Jalankan `POST /v1/documents` atau `POST /v1/documents/bulk`.
-5. Simpan `document_id` atau `document_ids` dari response.
-6. Panggil endpoint preview/download menggunakan `{{ document_id }}`.
-
-## Lisensi
-
-Tambahkan lisensi sesuai kebutuhan organisasi Anda, misalnya MIT, Apache-2.0, atau lisensi internal proprietary.
+- **Validasi OOXML**: `.docx/.xlsx/.pptx` hanya diverifikasi sebagai kontainer ZIP; isi dalamnya tidak diperiksa. Scanner nyata tetap diperlukan.
+- **Hapus fisik**: `DELETE` hanya soft delete; objek di storage tidak dihapus (kebijakan retensi/purge belum ada).
+- **Infected**: file INFECTED tetap di storage (tidak pernah dilayani) untuk keperluan audit.
+- **Field form**: karena upload di-stream, `external_ref`, `metadata`, `checksum_sha256` harus dikirim sebelum part `file`.
+- **Audit login gagal** hanya masuk log aplikasi (tabel audit membutuhkan `api_client_id` valid).
+- **Rate limiting** belum ada; pasang di reverse proxy / API gateway. Jika di belakang proxy, set `TRUST_PROXY=true`.
+- **Admin token** statis (env). Untuk produksi, taruh API ini di jaringan internal atau ganti dengan SSO operator.

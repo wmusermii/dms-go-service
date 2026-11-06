@@ -1,3 +1,4 @@
+// Package database owns the PostgreSQL connection pool and schema migrations.
 package database
 
 import (
@@ -8,31 +9,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewPostgresPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
-	cfg, err := pgxpool.ParseConfig(databaseURL)
+// NewPool opens a pgx connection pool and verifies connectivity.
+func NewPool(ctx context.Context, url string) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.New(ctx, url)
 	if err != nil {
-		return nil, fmt.Errorf("parse database config: %w", err)
+		return nil, fmt.Errorf("create pool: %w", err)
 	}
-
-	// Konfigurasi awal yang aman untuk development.
-	cfg.MaxConns = 10
-	cfg.MinConns = 2
-	cfg.MaxConnLifetime = time.Hour
-	cfg.MaxConnIdleTime = 30 * time.Minute
-
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("create postgres pool: %w", err)
-	}
-
-	// Pastikan koneksi benar-benar bisa dipakai.
-	ctxPing, cancel := context.WithTimeout(ctx, 5*time.Second)
+	pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-
-	if err := pool.Ping(ctxPing); err != nil {
+	if err := pool.Ping(pctx); err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("ping postgres: %w", err)
+		return nil, fmt.Errorf("ping database: %w", err)
 	}
-
 	return pool, nil
 }

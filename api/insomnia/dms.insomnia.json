@@ -1,0 +1,691 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-11-06T05:50:00.000Z",
+  "__export_source": "insomnia.desktop.app:v10.0.0",
+  "resources": [
+    {
+      "_id": "wrk_dms",
+      "_type": "workspace",
+      "parentId": null,
+      "name": "DMS - Document Management Service",
+      "description": "Generic DMS API. Fill the environment (base_url, client_id, api_key, admin_token), run 'Admin > Create client' then 'Admin > Issue API key', paste the returned key into the environment.",
+      "scope": "collection"
+    },
+    {
+      "_id": "env_dms_base",
+      "_type": "environment",
+      "parentId": "wrk_dms",
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8080",
+        "admin_token": "change-me-to-a-long-random-value",
+        "client_id": "app-sales",
+        "api_key": "PASTE_KEY_FROM_ISSUE_API_KEY_RESPONSE",
+        "actor_id": "user-123",
+        "client_uuid": "PASTE_CLIENT_ID_FROM_CREATE_CLIENT_RESPONSE",
+        "key_id": "PASTE_KEY_ID_HERE",
+        "document_id": "PASTE_DOCUMENT_ID_FROM_UPLOAD_RESPONSE"
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "base_url",
+          "admin_token",
+          "client_id",
+          "api_key",
+          "actor_id",
+          "client_uuid",
+          "key_id",
+          "document_id"
+        ]
+      },
+      "isPrivate": false,
+      "metaSortKey": 1
+    },
+    {
+      "_id": "fld_health",
+      "_type": "request_group",
+      "parentId": "wrk_dms",
+      "name": "Health",
+      "description": "",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": 1000
+    },
+    {
+      "_id": "req_live",
+      "_type": "request",
+      "parentId": "fld_health",
+      "name": "Liveness",
+      "description": "",
+      "method": "GET",
+      "url": "{{ _.base_url }}/healthz",
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 2000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_ready",
+      "_type": "request",
+      "parentId": "fld_health",
+      "name": "Readiness (DB)",
+      "description": "",
+      "method": "GET",
+      "url": "{{ _.base_url }}/readyz",
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 3000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "fld_admin",
+      "_type": "request_group",
+      "parentId": "wrk_dms",
+      "name": "Admin (operator)",
+      "description": "Authorization: Bearer {{ admin_token }}. Used to onboard consuming applications.",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": 4000
+    },
+    {
+      "_id": "req_admin_create_client",
+      "_type": "request",
+      "parentId": "fld_admin",
+      "name": "Create client",
+      "description": "Response data.id is the client UUID -> put it in the environment as client_uuid.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/admin/v1/clients",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.admin_token }}",
+          "description": ""
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json",
+          "description": ""
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 5000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"client_id\": \"{{ _.client_id }}\",\n  \"name\": \"Sales App\"\n}"
+      }
+    },
+    {
+      "_id": "req_admin_list_clients",
+      "_type": "request",
+      "parentId": "fld_admin",
+      "name": "List clients",
+      "description": "",
+      "method": "GET",
+      "url": "{{ _.base_url }}/admin/v1/clients",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.admin_token }}",
+          "description": ""
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 6000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_admin_issue_key",
+      "_type": "request",
+      "parentId": "fld_admin",
+      "name": "Issue API key",
+      "description": "The plaintext key (data.key) is shown ONCE. Copy it into the environment as api_key. Send an empty body for a non-expiring key.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/admin/v1/clients/{{ _.client_uuid }}/keys",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.admin_token }}",
+          "description": ""
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json",
+          "description": ""
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 7000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"expires_at\": \"2030-01-01T00:00:00Z\"\n}"
+      }
+    },
+    {
+      "_id": "req_admin_list_keys",
+      "_type": "request",
+      "parentId": "fld_admin",
+      "name": "List keys of client",
+      "description": "",
+      "method": "GET",
+      "url": "{{ _.base_url }}/admin/v1/clients/{{ _.client_uuid }}/keys",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.admin_token }}",
+          "description": ""
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 8000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_admin_revoke_key",
+      "_type": "request",
+      "parentId": "fld_admin",
+      "name": "Revoke key",
+      "description": "",
+      "method": "POST",
+      "url": "{{ _.base_url }}/admin/v1/clients/{{ _.client_uuid }}/keys/{{ _.key_id }}/revoke",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.admin_token }}",
+          "description": ""
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 9000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "fld_docs",
+      "_type": "request_group",
+      "parentId": "wrk_dms",
+      "name": "Documents (client API)",
+      "description": "Headers: X-Client-Id + X-Api-Key (+ optional X-Actor-Id).",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": 10000
+    },
+    {
+      "_id": "req_upload",
+      "_type": "request",
+      "parentId": "fld_docs",
+      "name": "Upload document",
+      "description": "Returns 201 with status PENDING. The file becomes downloadable once the scan marks it CLEAN (status AVAILABLE). Copy data.id into the environment as document_id.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/documents",
+      "headers": [
+        {
+          "name": "X-Client-Id",
+          "value": "{{ _.client_id }}",
+          "description": ""
+        },
+        {
+          "name": "X-Api-Key",
+          "value": "{{ _.api_key }}",
+          "description": ""
+        },
+        {
+          "name": "X-Actor-Id",
+          "value": "{{ _.actor_id }}",
+          "description": "Optional: your end-user id, recorded in the audit log"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 11000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "body": {
+        "mimeType": "multipart/form-data",
+        "params": [
+          {
+            "name": "external_ref",
+            "value": "order-1001",
+            "description": "Optional reference from your own app",
+            "disabled": false
+          },
+          {
+            "name": "metadata",
+            "value": "{\"module\":\"sales\",\"category\":\"invoice\"}",
+            "description": "Optional JSON object",
+            "disabled": false
+          },
+          {
+            "name": "checksum_sha256",
+            "value": "",
+            "description": "Optional: hex SHA-256; upload is rejected on mismatch",
+            "disabled": false
+          },
+          {
+            "name": "file",
+            "type": "file",
+            "fileName": "",
+            "description": "Choose a file in Insomnia (the 'file' part MUST come after the text fields)",
+            "disabled": false
+          }
+        ]
+      }
+    },
+    {
+      "_id": "req_list",
+      "_type": "request",
+      "parentId": "fld_docs",
+      "name": "List documents",
+      "description": "Optional query params: status=PENDING|AVAILABLE|REJECTED, external_ref=..., limit (max 100), offset.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/documents?limit=20&offset=0",
+      "headers": [
+        {
+          "name": "X-Client-Id",
+          "value": "{{ _.client_id }}",
+          "description": ""
+        },
+        {
+          "name": "X-Api-Key",
+          "value": "{{ _.api_key }}",
+          "description": ""
+        },
+        {
+          "name": "X-Actor-Id",
+          "value": "{{ _.actor_id }}",
+          "description": "Optional: your end-user id, recorded in the audit log"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 12000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_list_filtered",
+      "_type": "request",
+      "parentId": "fld_docs",
+      "name": "List by external_ref",
+      "description": "",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/documents?external_ref=order-1001&status=AVAILABLE",
+      "headers": [
+        {
+          "name": "X-Client-Id",
+          "value": "{{ _.client_id }}",
+          "description": ""
+        },
+        {
+          "name": "X-Api-Key",
+          "value": "{{ _.api_key }}",
+          "description": ""
+        },
+        {
+          "name": "X-Actor-Id",
+          "value": "{{ _.actor_id }}",
+          "description": "Optional: your end-user id, recorded in the audit log"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 13000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_get",
+      "_type": "request",
+      "parentId": "fld_docs",
+      "name": "Get document metadata",
+      "description": "",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/documents/{{ _.document_id }}",
+      "headers": [
+        {
+          "name": "X-Client-Id",
+          "value": "{{ _.client_id }}",
+          "description": ""
+        },
+        {
+          "name": "X-Api-Key",
+          "value": "{{ _.api_key }}",
+          "description": ""
+        },
+        {
+          "name": "X-Actor-Id",
+          "value": "{{ _.actor_id }}",
+          "description": "Optional: your end-user id, recorded in the audit log"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 14000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_update",
+      "_type": "request",
+      "parentId": "fld_docs",
+      "name": "Update external_ref / metadata",
+      "description": "Fields are optional; metadata, when sent, replaces the whole object.",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/api/v1/documents/{{ _.document_id }}",
+      "headers": [
+        {
+          "name": "X-Client-Id",
+          "value": "{{ _.client_id }}",
+          "description": ""
+        },
+        {
+          "name": "X-Api-Key",
+          "value": "{{ _.api_key }}",
+          "description": ""
+        },
+        {
+          "name": "X-Actor-Id",
+          "value": "{{ _.actor_id }}",
+          "description": "Optional: your end-user id, recorded in the audit log"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json",
+          "description": ""
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 15000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"external_ref\": \"order-1001\",\n  \"metadata\": {\n    \"module\": \"sales\",\n    \"reviewed\": true\n  }\n}"
+      }
+    },
+    {
+      "_id": "req_download",
+      "_type": "request",
+      "parentId": "fld_docs",
+      "name": "Download (latest clean version)",
+      "description": "409 document_not_available while PENDING / INFECTED. Add ?version=2 for a specific version.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/documents/{{ _.document_id }}/download",
+      "headers": [
+        {
+          "name": "X-Client-Id",
+          "value": "{{ _.client_id }}",
+          "description": ""
+        },
+        {
+          "name": "X-Api-Key",
+          "value": "{{ _.api_key }}",
+          "description": ""
+        },
+        {
+          "name": "X-Actor-Id",
+          "value": "{{ _.actor_id }}",
+          "description": "Optional: your end-user id, recorded in the audit log"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 16000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_download_v",
+      "_type": "request",
+      "parentId": "fld_docs",
+      "name": "Download specific version",
+      "description": "",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/documents/{{ _.document_id }}/download?version=1",
+      "headers": [
+        {
+          "name": "X-Client-Id",
+          "value": "{{ _.client_id }}",
+          "description": ""
+        },
+        {
+          "name": "X-Api-Key",
+          "value": "{{ _.api_key }}",
+          "description": ""
+        },
+        {
+          "name": "X-Actor-Id",
+          "value": "{{ _.actor_id }}",
+          "description": "Optional: your end-user id, recorded in the audit log"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 17000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_preview",
+      "_type": "request",
+      "parentId": "fld_docs",
+      "name": "Preview (inline)",
+      "description": "Inline rendering for PDF, images and text only; other types return 415 (use download).",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/documents/{{ _.document_id }}/preview",
+      "headers": [
+        {
+          "name": "X-Client-Id",
+          "value": "{{ _.client_id }}",
+          "description": ""
+        },
+        {
+          "name": "X-Api-Key",
+          "value": "{{ _.api_key }}",
+          "description": ""
+        },
+        {
+          "name": "X-Actor-Id",
+          "value": "{{ _.actor_id }}",
+          "description": "Optional: your end-user id, recorded in the audit log"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 18000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_delete",
+      "_type": "request",
+      "parentId": "fld_docs",
+      "name": "Delete document (soft)",
+      "description": "",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/api/v1/documents/{{ _.document_id }}",
+      "headers": [
+        {
+          "name": "X-Client-Id",
+          "value": "{{ _.client_id }}",
+          "description": ""
+        },
+        {
+          "name": "X-Api-Key",
+          "value": "{{ _.api_key }}",
+          "description": ""
+        },
+        {
+          "name": "X-Actor-Id",
+          "value": "{{ _.actor_id }}",
+          "description": "Optional: your end-user id, recorded in the audit log"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 19000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "fld_versions",
+      "_type": "request_group",
+      "parentId": "wrk_dms",
+      "name": "Versions (client API)",
+      "description": "",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": 20000
+    },
+    {
+      "_id": "req_versions_list",
+      "_type": "request",
+      "parentId": "fld_versions",
+      "name": "List versions",
+      "description": "",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/documents/{{ _.document_id }}/versions",
+      "headers": [
+        {
+          "name": "X-Client-Id",
+          "value": "{{ _.client_id }}",
+          "description": ""
+        },
+        {
+          "name": "X-Api-Key",
+          "value": "{{ _.api_key }}",
+          "description": ""
+        },
+        {
+          "name": "X-Actor-Id",
+          "value": "{{ _.actor_id }}",
+          "description": "Optional: your end-user id, recorded in the audit log"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 21000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_versions_upload",
+      "_type": "request",
+      "parentId": "fld_versions",
+      "name": "Upload new version",
+      "description": "The previous clean version keeps being served until the new one is scanned CLEAN.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/documents/{{ _.document_id }}/versions",
+      "headers": [
+        {
+          "name": "X-Client-Id",
+          "value": "{{ _.client_id }}",
+          "description": ""
+        },
+        {
+          "name": "X-Api-Key",
+          "value": "{{ _.api_key }}",
+          "description": ""
+        },
+        {
+          "name": "X-Actor-Id",
+          "value": "{{ _.actor_id }}",
+          "description": "Optional: your end-user id, recorded in the audit log"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "metaSortKey": 22000,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "body": {
+        "mimeType": "multipart/form-data",
+        "params": [
+          {
+            "name": "checksum_sha256",
+            "value": "",
+            "description": "Optional: hex SHA-256",
+            "disabled": false
+          },
+          {
+            "name": "file",
+            "type": "file",
+            "fileName": "",
+            "description": "Choose a file in Insomnia (the 'file' part MUST come after the text fields)",
+            "disabled": false
+          }
+        ]
+      }
+    }
+  ]
+}
