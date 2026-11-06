@@ -2,8 +2,10 @@
 package config
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strconv"
 	"strings"
@@ -50,8 +52,13 @@ type ScannerConfig struct {
 	StaleAfter   time.Duration
 }
 
-// Load reads configuration from the environment and validates it.
+// Load reads configuration from the environment and validates it. A ".env"
+// file in the working directory is loaded first (if present); variables that
+// are already set in the real environment take precedence over the file.
 func Load() (*Config, error) {
+	if err := loadDotEnv(".env"); err != nil {
+		return nil, err
+	}
 	l := &loader{}
 
 	cfg := &Config{
@@ -135,6 +142,67 @@ func (c *Config) validate() error {
 		errs = append(errs, errors.New("SCAN_MAX_ATTEMPTS must be > 0"))
 	}
 	return errors.Join(errs...)
+}
+
+// ---- .env loading ----------------------------------------------------------
+
+// loadDotEnv copies KEY=VALUE pairs from path into the process environment.
+// A missing file is not an error. Variables already present in the
+// environment are left untouched, so OS/CI settings override the file.
+//
+// Supported syntax: "#" comment lines, optional "export " prefix, single- or
+// double-quoted values, " #" inline comments on unquoted values, CRLF line
+// endings and a UTF-8 BOM (both common for files created on Windows).
+func loadDotEnv(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close()
+
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	first := true
+	for sc.Scan() {
+		line := sc.Text()
+		if first {
+			line = strings.TrimPrefix(line, "\xef\xbb\xbf")
+			first = false
+		}
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+		key, val, ok := strings.Cut(line, "=")
+		key = strings.TrimSpace(key)
+		if !ok || key == "" {
+			continue
+		}
+		if _, set := os.LookupEnv(key); set {
+			continue
+		}
+		if err := os.Setenv(key, parseEnvValue(strings.TrimSpace(val))); err != nil {
+			return fmt.Errorf("%s: set %s: %w", path, key, err)
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	return nil
+}
+
+func parseEnvValue(v string) string {
+	if len(v) >= 2 && (v[0] == '"' && v[len(v)-1] == '"' || v[0] == '\'' && v[len(v)-1] == '\'') {
+		return v[1 : len(v)-1]
+	}
+	if i := strings.Index(v, " #"); i >= 0 {
+		v = v[:i]
+	}
+	return strings.TrimSpace(v)
 }
 
 // ---- env helpers -----------------------------------------------------------
